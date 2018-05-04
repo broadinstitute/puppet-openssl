@@ -5,7 +5,7 @@
 
 # This definition stops the following lines choking if HOME isn't
 # defined.
-dir = <%= @pki_dir %>
+dir = <%= @_cnf_dir %>
 
 [ ca ]
 default_ca = CA_default
@@ -52,7 +52,7 @@ organizationName       = <%= @organization %>
 <% unless @unit.nil? -%>
 organizationalUnitName = <%= @unit %>
 <% end -%>
-commonName             = <%= @common_name %>
+commonName             = <%= @commonname %>
 
 [ v3_ca ]
 basicConstraints        = CA:TRUE
@@ -61,7 +61,7 @@ authorityKeyIdentifier  = keyid:always,issuer:always
 nsCertType              = sslCA
 keyUsage                = cRLSign, keyCertSign
 extendedKeyUsage        = serverAuth, clientAuth
- 
+
 [ v3_req ]
 basicConstraints     = CA:FALSE
 subjectKeyIdentifier = hash

@@ -402,7 +402,7 @@ describe 'openssl::certificate::x509' do
       ).with_content(
         /subjectAltName\s+=\s+"DNS: a\.com, DNS: b\.com, DNS: c\.com"/
       ).with_content(
-	/extendedKeyUsage\s+=\s+"serverAuth, clientAuth"/
+        /extendedKeyUsage\s+=\s+"serverAuth, clientAuth"/
       )
     }
 

@@ -1,37 +1,86 @@
 # == Definition: openssl::certificate::authority
 #
-# Creates a certificate authority and private key for signing certificates.
+# Creates a certificate authority according to data provided.
 #
 # === Parameters
 #  [*ensure*]         ensure wether certif and its config are present or not
 #  [*country*]        certificate countryName
 #  [*state*]          certificate stateOrProvinceName
 #  [*locality*]       certificate localityName
-#  [*common_name*]    certificate CommonName
+#  [*commonname*]     certificate CommonName
 #  [*altnames*]       certificate subjectAltName.
 #                     Can be an array or a single string.
+#  [*extkeyusage*]    certificate extended key usage
+#  # Value            Meaning
+#  -----              -------
+#  serverAuth         SSL/TLS Web Server Authentication.
+#  clientAuth         SL/TLS Web Client Authentication.
+#  codeSigning        Code signing.
+#  emailProtection    E-mail Protection (S/MIME).
+#  timeStamping       Trusted Timestamping
+#  OCSPSigning        OCSP Signing
+#  ipsecIKE           ipsec Internet Key Exchange
+#  msCodeInd          Microsoft Individual Code Signing (authenticode)
+#  msCodeCom          Microsoft Commercial Code Signing (authenticode)
+#  msCTLSign          Microsoft Trust List Signing
+#  msEFS              Microsoft Encrypted File System
+#
 #  [*organization*]   certificate organizationName
 #  [*unit*]           certificate organizationalUnitName
 #  [*email*]          certificate emailAddress
 #  [*days*]           certificate validity
-#  [*pki_dir*]       where cnf, crt, csr and key should be placed.
+#  [*base_dir*]       where cnf, crt, csr and key should be placed.
 #                     Directory must exist
 #  [*owner*]          cnf, crt, csr and key owner. User must exist
 #  [*group*]          cnf, crt, csr and key group. Group must exist
-#  [*password*]       private key password. undef means no passphrase 
+#  [*key_owner*]      key owner. User must exist. defaults to $owner
+#  [*key_group*]      key group. Group must exist. defaults to $group
+#  [*key_mode*]       key group.
+#  [*password*]       private key password. undef means no passphrase
 #                     will be used to encrypt private key.
 #  [*force*]          whether to override certificate and request
 #                     if private key changes
 #  [*cnf_tpl*]        Specify an other template to generate ".cnf" file.
+#  [*cnf_dir*]        where cnf should be placed.
+#                     Directory must exist, defaults to $base_dir.
+#  [*crt_dir*]        where crt should be placed.
+#                     Directory must exist, defaults to $base_dir.
+#  [*csr_dir*]        where csr should be placed.
+#                     Directory must exist, defaults to $base_dir.
+#  [*key_dir*]        where key should be placed.
+#                     Directory must exist, defaults to $base_dir.
+#  [*cnf*]            override cnf path entirely.
+#                     Directory must exist, defaults to $cnf_dir/$title.cnf
+#  [*crt*]            override crt path entirely.
+#                     Directory must exist, defaults to $crt_dir/$title.crt
+#  [*csr*]            override csr path entirely.
+#                     Directory must exist, defaults to $csr_dir/$title.csr
+#  [*key*]            override key path entirely.
+#                     Directory must exist, defaults to $key_dir/$title.key
+#  [*encrypted*]      Flag requesting the exported key to be unencrypted by
+#                     specifying the -nodes option during the CSR generation. Turning
+#                     off encryption is needed by some applications, such as OpenLDAP.
+#                     Defaults to true (key is encrypted)
 #
 # === Example
 #
 #   openssl::certificate::authority { 'ca':
 #     ensure       => present,
+#     cnf_tpl      => 'my_module/openssl.cnf.erb',
+#     base_dir     => '/etc/pki/mymodule,
+#     country      => 'CH',
+#     state        => 'Here',
+#     locality     => 'Myplace',
+#     organization => 'Example.com',
+#     commonname   => $fqdn,
+#     days         => 365*20,
+#   }
+#   openssl::certificate::x509 { 'foo.bar':
+#     ensure       => present,
 #     country      => 'CH',
 #     organization => 'Example.com',
-#     common_name  => $fqdn,
-#     pki_dir      => '/var/www/ssl',
+#     commonname   => $fqdn,
+#     base_dir     => '/var/www/ssl',
 #     owner        => 'www-data',
 #   }
 #
@@ -41,113 +90,104 @@
 #
 # Those files can be used as is for apache, openldap and so on.
 #
+# If you wish to ensure a key is read-only to a process:
+# set $key_group to match the group of the process,
+# and set $key_mode to '0640'.
+#
 # === Requires
 #
 #   - `puppetlabs/stdlib`
 #
-define openssl::certificate::authority (
-  $country,
-  $organization,
-  $common_name,
-  $ensure = present,
-  $state = undef,
-  $locality = undef,
-  $unit = undef,
-  $altnames = [],
-  $email = undef,
-  $days = 365,
-  $pki_dir = '/etc/ssl/certs',
-  $owner = 'root',
-  $group = 'root',
-  $password = undef,
-  $force = true,
-  $cnf_tpl = 'openssl/openssl.cnf.erb',
+class openssl::certificate::authority(
+  String                         $country,
+  String                         $organization,
+  String                         $commonname,
+  Enum['present', 'absent']      $ensure = present,
+  Optional[String]               $state = undef,
+  Optional[String]               $locality = undef,
+  Optional[String]               $unit = undef,
+  Array                          $altnames = [],
+  Array                          $extkeyusage = [],
+  Optional[String]               $email = undef,
+  Integer                        $days = 365,
+  Stdlib::Absolutepath           $base_dir = '/etc/ssl/certs',
+  Optional[Stdlib::Absolutepath] $cnf_dir = undef,
+  Optional[Stdlib::Absolutepath] $crt_dir = undef,
+  Optional[Stdlib::Absolutepath] $csr_dir = undef,
+  Optional[Stdlib::Absolutepath] $key_dir = undef,
+  Optional[Stdlib::Absolutepath] $cnf = undef,
+  Optional[Stdlib::Absolutepath] $crt = undef,
+  Optional[Stdlib::Absolutepath] $csr = undef,
+  Optional[Stdlib::Absolutepath] $key = undef,
+  Integer                        $key_size = 2048,
+  String                         $owner = 'root',
+  String                         $group = 'root',
+  Optional[String]               $key_owner = undef,
+  Optional[String]               $key_group = undef,
+  String                         $key_mode = '0600',
+  Optional[String]               $password = undef,
+  Boolean                        $force = true,
+  String                         $cnf_tpl = 'openssl/cert.cnf.erb',
+  Boolean                        $encrypted = true,
+  String                         $private_dir_mode = '0700',
+  String                         $certs_dir_mode = '0755',
+  String                         $requests_dir_mode = '0755',
   ) {
 
-  validate_string($name)
-  validate_string($country)
-  validate_string($organization)
-  validate_string($commonname)
-  validate_string($ensure)
-  validate_string($state)
-  validate_string($locality)
-  validate_string($unit)
-  validate_array($altnames)
-  validate_string($email)
-  # lint:ignore:only_variable_string
-  validate_string("${days}")
-  validate_re("${days}", '^\d+$')
-  # lint:endignore
-  validate_string($pki_dir)
-  validate_string($owner)
-  validate_string($group)
-  validate_string($password)
-  validate_bool($force)
-  validate_re($ensure, '^(present|absent)$',
-    "\$ensure must be either 'present' or 'absent', got '${ensure}'")
-  validate_string($cnf_tpl)
+  $_key_owner = pick($key_owner, $owner)
+  $_key_group = pick($key_group, $group)
+  $_cnf_dir = pick($cnf_dir, $base_dir)
+  $_csr_dir = pick($csr_dir, "${base_dir/requests}")
+  $_crt_dir = pick($crt_dir, "${base_dir/certs}")
+  $_key_dir = pick($key_dir, "${base_dir/private}")
+  $_cnf = pick($cnf, "${_cnf_dir}/${name}.cnf")
+  $_crt = pick($crt, "${_crt_dir}/${name}.crt")
+  $_csr = pick($csr, "${_csr_dir}/${name}.csr")
+  $_key = pick($key, "${_key_dir}/${name}.key")
 
-  file { $pki_dir:
+  file { $_cnf_dir:
     ensure => directory,
-    owner   => $owner,
-    group   => $group,
-    mode    => '0700',
-  } ->
-  file { "${pki_dir}/${name}.cnf":
+    owner  => $owner,
+    group  => $group,
+    mode   => '0700',
+  }
+
+  file { $_cnf:
     ensure  => $ensure,
     owner   => $owner,
     group   => $group,
     content => template($cnf_tpl),
-  } ->
-  file { "${pki_dir}/index.txt":
+  }
+
+  file { "${_cnf_dir}/index.txt":
     ensure  => $ensure,
     owner   => $owner,
     group   => $group,
     mode    => '0600',
-  } ->
-  file { "${pki_dir}/private":
-    ensure  => directory,
-    owner   => $owner,
-    group   => $group,
-    mode    => '0700',
-  } ->
-  file { "${pki_dir}/certs":
-    ensure  => directory,
-    owner   => $owner,
-    group   => $group,
-    mode    => '0700',
-  } ->
-  file { "${pki_dir}/requests":
-    ensure  => directory,
-    owner   => $owner,
-    group   => $group,
-    mode    => '0700',
-  } ->
-  ssl_pkey { "${pki_dir}/private/${name}_key.key": 
-    ensure => present,
-  } ~>
-  x509_cert { "${pki_dir}/certs/${name}_cert.crt":
-    ensure      => present,
-    ca          => true,
-    template    => "${pki_dir}/${name}.cnf",
-    private_key => "${pki_dir}/private/${name}_key.key",
-    force       => $force,
-    req_ext     => false,
+    require => File[$_cnf_dir],
   }
 
-  # Set owner of all files
-  file { "${pki_dir}/${name}_key.key":
-    ensure  => $ensure,
+  file { $_key_dir:
+    ensure  => directory,
     owner   => $owner,
     group   => $group,
-    mode    => '0600',
-    require => Ssl_pkey["${pki_dir}/private/${name}_key.key"],
+    mode    => $private_dir_mode,
+    require => File[$_cnf_dir],
   }
 
-  file { "${pki_dir}/${name}_cert.crt":
-    ensure  => $ensure,
+  file { $_crt_dir:
+    ensure  => directory,
     owner   => $owner,
     group   => $group,
-    require => X509_cert["${pki_dir}/certs/${name}_cert.crt"],
+    mode    => $certs_dir_mode,
+    require => File[$_cnf_dir],
+  }
+
+  file { $_csr_dir:
+    ensure  => directory,
+    owner   => $owner,
+    group   => $group,
+    mode    => $requests_dir_mode,
+    require => File[$_cnf_dir],
   }
 }
