@@ -28,7 +28,6 @@ Puppet::Type.type(:ssl_pkey).provide(:openssl) do
   end
 
   def exists?
-    return false if resource[:regenerate]
     Pathname.new(resource[:path]).exist?
   end
 

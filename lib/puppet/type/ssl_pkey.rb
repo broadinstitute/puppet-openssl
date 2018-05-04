@@ -37,8 +37,4 @@ Puppet::Type.newtype(:ssl_pkey) do
   newparam(:password) do
     desc 'The optional password for the key'
   end
-
-  newparam(:regenerate) do
-    desc 'Force a new key to be generated'
-  end
 end
